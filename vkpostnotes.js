@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         VK Post Notes
 // @namespace    http://tampermonkey.net/
-// @version      0.1
+// @version      0.15
 // @description  try to take over the world!
 // @author       You
 // @match        *://vk.com/*
@@ -33,6 +33,10 @@
         return element.firstChild;
     };
     
+    let removeElement = (domElement) => {
+        domElement.parentNode.removeChild(domElement);
+    };
+    
     //notes save\restore 
     class NotesStorage {
         constructor() {
@@ -49,6 +53,7 @@
             if (note != null) {
                 runtimeNote.text = note.text;
                 runtimeNote.category = note.category;
+                runtimeNote.isPostHidden = note.isPostHidden;
             }
         }
             
@@ -59,7 +64,7 @@
                 let runtimeNote = this.notesRuntimeCache[runtimeNoteId],
                     noteIndex = this.getNoteIndex(runtimeNote.noteId),
                     note = this.getNoteByIndex(noteIndex),
-                    noteShouldBeSaved = (runtimeNote.text && runtimeNote.text.length > 0) || (runtimeNote.category != null),
+                    noteShouldBeSaved = (runtimeNote.text && runtimeNote.text.length > 0) || (runtimeNote.category != null) || runtimeNote.isPostHidden === true,
                     newNote = null;
                
                 if (noteShouldBeSaved) {
@@ -67,7 +72,8 @@
                         noteId: runtimeNote.noteId,
                         postId: runtimeNote.postId,
                         text: runtimeNote.text,
-                        category: runtimeNote.category
+                        category: runtimeNote.category,
+                        isPostHidden: runtimeNote.isPostHidden
                     };
                 }
                 if (note != null) {
@@ -90,13 +96,23 @@
             GM_setValue(gmStorageKey, notesData);
         }
         
-//         findRuntimeNoteById(noteId) {
-//             let result = this.notes.filter(function(obj) {
-//                 return obj.noteId === noteId;
-//             });
+        //TODO: Broke single responsibility, move to other class
+        hidePostsWithCategory(category) {
+            let notesToHide = [];
+            for(var runtimeNoteId in this.notesRuntimeCache) {
+                let runtimeNote = this.notesRuntimeCache[runtimeNoteId];
+                
+                if (runtimeNote.category === category && runtimeNote.postDomElement != null) {
+                    notesToHide.push(runtimeNote);
+                }
+            }
             
-//             return result[0];
-//         }
+            for(let i = 0; i < notesToHide.length; ++i)
+            {
+                notesToHide[i].postDomElement.parentNode.removeChild(notesToHide[i].postDomElement);
+                notesToHide[i].postDomElement = null;
+            }
+        }
         
         findNoteById(noteId) {
             //let result = this.notes.filter(function(note) {
@@ -204,11 +220,16 @@
     };
     
     //TODO: Check if note text is already saved. If yes, then load text.
-    let createNote = (postId) => {
+    let createNote = (postId, postDomElement) => {
         const addNoteButtonClass = "post-custom-note";
         const categoryButtonClass = "post-custom-note-change-category-button";
+        const hideButtonClass = "post-hide-note-button";
+        const blockButtonClass = "post-block-button";
+        
         let addNoteButtonId = postId + "-custom-notes-add-note-button";
         let categoryButtonId = postId + "-custom-notes-category-note-button";
+        let hideButtonId = postId + "-custom-notes-hide-category-button";
+        let blockButtonId = postId + "-custom-notes-block-button";
         
         let categoryIconId = postId + "-custom-notes-category-icon",
             categoryIconClass = "post-custom-note-category-icon";
@@ -232,6 +253,18 @@
             if (category === "done") {
                 return "<i id='" + categoryIconId + "' class='material-icons " + categoryIconClass + "'>done</i>";
             }
+            if (category === "active") {
+                return "<i id='" + categoryIconId + "' class='material-icons " + categoryIconClass + "'>airplanemode_active</i>";
+            }
+            if (category === "question") {
+                return "<i id='" + categoryIconId + "' class='material-icons " + categoryIconClass + "'>help_outline</i>";
+            }
+            if (category === "car0") {
+                return "<i id='" + categoryIconId + "' class='material-icons " + categoryIconClass + "'>directions_car</i>";
+            }
+            if (category === "suspended") {
+                return "<i id='" + categoryIconId + "' class='material-icons " + categoryIconClass + "'>hotel</i>";
+            }
             return "";
         };
         
@@ -253,8 +286,9 @@
                 categoryIcon = getCategoryIconHtml(note.category);
             }
         }
-        
+        buttonsHtml+='<i ' + hideButtonId + '" class="material-icons ' + hideButtonClass + '">visibility_off</i>';
         buttonsHtml+='<i ' + categoryButtonId + '" class="material-icons ' + categoryButtonClass + '">group_work</i>';
+        buttonsHtml+='<i ' + blockButtonId + '" class="material-icons ' + blockButtonClass + '">block</i>';
         
         if (categoryIcon != null) {
             buttonsHtml += categoryIcon;
@@ -264,7 +298,8 @@
         let addNoteButtonElement = containerElement.getElementsByClassName(addNoteButtonClass)[0];
         let changeCategoryButtonElement = containerElement.getElementsByClassName(categoryButtonClass)[0];
         let categoryIconElement = containerElement.getElementsByClassName(categoryIconClass)[0];
-        
+        let hideButtomElement = containerElement.getElementsByClassName(hideButtonClass)[0];
+        let blockButtomElement = containerElement.getElementsByClassName(blockButtonClass)[0];
         
         
         let runtimeNote = {
@@ -272,14 +307,30 @@
             "postId": postId,
             "text": null,
             "category": null,
+            "postDomElement": postDomElement,
             "containerElement": containerElement,
             "addNoteElement": addNoteButtonElement,
             "categoryElement": changeCategoryButtonElement,
-            "categoryIconElement": categoryIconElement
+            "categoryIconElement": categoryIconElement,
+            "hideButtomElement": hideButtomElement,
+            "blockButtomElement": blockButtomElement
         };
         
         addNoteButtonElement.onclick = () => {
             lightbox.show(runtimeNote);
+        };
+        
+        hideButtomElement.onclick = () => {
+            if (runtimeNote.category != null) {
+                notesStorage.hidePostsWithCategory(runtimeNote.category);
+            }
+        };
+        
+        blockButtomElement.onclick = () => {
+            debugger;
+            runtimeNote.isPostHidden = true;
+            notesStorage.save();
+            removeElement(runtimeNote.postDomElement);
         };
         
         changeCategoryButtonElement.onclick = () => {
@@ -293,8 +344,20 @@
                 runtimeNote.category = "done";
             } else
             if (runtimeNote.category === "done") {
+                runtimeNote.category = "suspended";
+            } else
+            if (runtimeNote.category === "suspended") {
+                runtimeNote.category = "question";
+            }else
+            if (runtimeNote.category === "question") {
+                runtimeNote.category = "car0";
+            }else
+            if (runtimeNote.category === "car0") {
+                runtimeNote.category = null;
+            } else {
                 runtimeNote.category = null;
             }
+            
             
             //process dom changes
             if (runtimeNote.category != null) {
@@ -367,8 +430,13 @@
             
             if (postNoteContainer == null) {
                 //container is not created yet, create it:
-                let note = createNote(postId);
-                postHeader.appendChild(note.containerElement);
+                let runtimeNote = createNote(postId, posts[i]);
+                if (runtimeNote.isPostHidden === true) {
+                    removeElement(runtimeNote.postDomElement);
+                } else {
+                    postHeader.appendChild(runtimeNote.containerElement);
+                }
+                
             }
         }
         
