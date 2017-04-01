@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         VK Post Notes
 // @namespace    http://tampermonkey.net/
-// @version      0.15
-// @description  try to take over the world!
-// @author       You
+// @version      0.16
+// @description  Add the ability to add notes to any post + add categories to post + hide posts\categories
+// @author       psxvoid
 // @match        *://vk.com/*
 // @grant         GM_addStyle
 // @grant         GM_getValue
@@ -109,8 +109,25 @@
             
             for(let i = 0; i < notesToHide.length; ++i)
             {
-                notesToHide[i].postDomElement.parentNode.removeChild(notesToHide[i].postDomElement);
-                notesToHide[i].postDomElement = null;
+                try {
+                    //notesToHide[i].postDomElement.parentNode can be null here => exception will be thrown
+                    removeElement(notesToHide[i].postDomElement);
+                    notesToHide[i].postDomElement = null;
+                    
+                }
+                catch(ex)
+                {
+                    //try to delete it later
+                    setTimeout(() => {
+                        try {
+                            removeElement(notesToHide[i].postDomElement);
+                            notesToHide[i].postDomElement = null;
+                        } catch(ex) {
+                            console.log("!!! Can't remove post node !!!");
+                        }
+                        
+                    }, 500);
+                }
             }
         }
         
@@ -202,8 +219,22 @@
         }
     }
     
+    class RuntimeCategoryManager {
+        constructor() {
+            this["hiddenCategories"] = [];
+        }
+        markCategoryAsHidden(category) {
+            if (this["hiddenCategories"].indexOf(category) < 0) {
+                this["hiddenCategories"].push(category);
+            }
+        }
+        isCategoryHidden(category) {
+            return this["hiddenCategories"].indexOf(category) >= 0;
+        }
+    }
+    
     //'global' variables
-    let notesStorage = new NotesStorage(), lightbox = new Lightbox(), isObserving = false;
+    let notesStorage = new NotesStorage(), lightbox = new Lightbox(), isObserving = false, categoryManager = new RuntimeCategoryManager();
     
     // Get PostId
     // 26.03.2017 20:04 The format is following: post50101872_500
@@ -322,6 +353,7 @@
         
         hideButtomElement.onclick = () => {
             if (runtimeNote.category != null) {
+                categoryManager.markCategoryAsHidden(runtimeNote.category);
                 notesStorage.hidePostsWithCategory(runtimeNote.category);
             }
         };
@@ -431,7 +463,7 @@
             if (postNoteContainer == null) {
                 //container is not created yet, create it:
                 let runtimeNote = createNote(postId, posts[i]);
-                if (runtimeNote.isPostHidden === true) {
+                if (runtimeNote.isPostHidden === true || categoryManager.isCategoryHidden(runtimeNote.category)) {
                     removeElement(runtimeNote.postDomElement);
                 } else {
                     postHeader.appendChild(runtimeNote.containerElement);
