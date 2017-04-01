@@ -13,7 +13,11 @@
 
 (function() {
     'use strict';
-    // Your code here... Like this note =)
+	//Additional facts:
+	//1) The code is pretty ugly and break multiple good programming principles. Take care of your eyes.
+	//2) The script saves notes to a local storage. It is not optimized.
+	//3) It have no backup support for now, do not use it to store an important information.
+	//4) Have fun!
     
     //Add google fonts. See: http://stackoverflow.com/questions/5751620/ways-to-add-javascript-files-dynamically-in-a-page
     let materialIconsStylesheet=document.createElement("link");
